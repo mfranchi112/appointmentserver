@@ -1,0 +1,3 @@
+Matteo Franchi 
+
+Q1: .. means parent directory and -R means recursive 
