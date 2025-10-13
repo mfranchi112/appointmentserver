@@ -1,5 +1,7 @@
 const http = require('http');
+const fs = require('fs');
 const url = require('url');
+const pathModule = require('path');
 const availableTimes = {
     Monday: ["1:00", "1:30", "2:00", "2:30", "3:00", "3:30", "4:00", "4:30"],
     Tuesday: ["1:00", "1:30", "2:00", "2:30", "3:00", "3:30", "4:00", "4:30"],
@@ -11,52 +13,72 @@ const appointments = [
     {name: "James", day: "Wednesday", time: "3:30" },
     {name: "Lillie", day: "Friday", time: "1:00" }];
 
+function sendResponse(res, statusCode, contentType, data) {
+    res.writeHead(statusCode, { 'Content-Type': contentType });
+    // If data is a Buffer or string, send it, if not, JSON stringify
+    if (Buffer.isBuffer(data) || typeof data === 'string') {
+        res.end(data);
+    } else {
+        res.end(JSON.stringify(data));
+    }
+} 
 
-//create server object 
-const myserver = http.createServer(function (req, res) {
-	console.log(req.url);
-	let urlObj = url.parse(req.url,true);
-	switch (urlObj.pathname) {
-		case "/schedule":
-			schedule(urlObj.query, res);
-			break;
-		case "/cancel":
-			cancel(urlObj.query, res);
-			break;
-		case "/check":
-			checkAvailability(urlObj.query, res)
-			break;
-		default:
-			error(res,404,"pathname unknown");
-	}
-});
+function getContentType(ext) {
+    // cover common types used by the interface
+    switch (ext.toLowerCase()) {
+        case '.html': return 'text/html';
+        case '.css': return 'text/css';
+        case '.js': return 'text/javascript';
+        case '.json': return 'application/json';
+        case '.png': return 'image/png';
+        case '.jpeg': return 'image/jpeg';
+        case '.gif': return 'image/gif';
+        case '.svg': return 'image/svg+xml';
+        case '.txt': return 'text/plain';
+        default: return 'application/octet-stream';
+    }
+}
 
-//Schedule function
+function sendFile(filePath, res) {
+    const normalized = pathModule.normalize(filePath);
 
+    // determine extension and content type
+    const ext = pathModule.extname(normalized) || '.html';
+    const contentType = getContentType(ext);
+
+    fs.readFile(normalized, function (err, data) {
+        if (err) {
+            // If file not found, return 404 
+            sendResponse(res, 404, 'text/plain', 'File not found: ' + filePath);
+        } else {
+            sendResponse(res, 200, contentType, data);
+        }
+    });
+}
+
+// Schedule function
 function schedule(qObj, res) {
-	if (!qObj.name || !qObj.day || !qObj.time) {
-		return error(res, 400, "Missing name, day, or time");
-	
-} 
+    if (!qObj.name || !qObj.day || !qObj.time) {
+        return sendResponse(res, 400, 'text/plain', 'Missing name, day, or time');
+    }
 
-if (availableTimes[qObj.day] && availableTimes[qObj.day].includes(qObj.time)) {
-//remove time
-	availableTimes[qObj.day] = availableTimes[qObj.day].filter(time => time !== qObj.time);
-//add apointments
-	appointments.push({ name: qObj.name, day: qObj.day, time: qObj.time});
-	
-	res.writeHead(200, { 'content-type': 'text/plain' });
-	res.write("reserved");
-	res.end();
-} else {
-	error(res, 400, "Can't schedule");
-	}
-} 
+    if (availableTimes[qObj.day] && availableTimes[qObj.day].includes(qObj.time)) {
+        // remove time slot
+        availableTimes[qObj.day] = availableTimes[qObj.day].filter(time => time !== qObj.time);
+
+        // add appointment
+        appointments.push({ name: qObj.name, day: qObj.day, time: qObj.time });
+
+        return sendResponse(res, 200, 'text/plain', 'reserved');
+    } else {
+        return sendResponse(res, 400, 'text/plain', "Can't schedule");
+    }
+}
 
 //Cancel function
 function cancel(qObj, res) {
 	if (!qObj.name || !qObj.day || !qObj.time) { 
-		return error(res, 400, "Missing name, day, or time");
+		return sendResponse(res, 400, 'text/plain', "Missing name, day, or time");
     }
 
     const index = appointments.findIndex(app =>
@@ -74,36 +96,53 @@ if (index !== -1) {
         availableTimes[qObj.day].push(qObj.time);
         availableTimes[qObj.day].sort();
 
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.write("Appointment has been canceled");
-        res.end();
+        return sendResponse(res, 200, 'text/plain', 'Appointment has been canceled');
     } else {
-        error(res, 404, "Appointment not found");
+        return sendResponse(res, 404, 'text/plain', 'Appointment not found');
     }
 }
 
 //Check Availability function
 function checkAvailability(qObj, res) {
     if (!qObj.day || !qObj.time) {
-        return error(res, 400, "Missing day or time");
+        return sendResponse(res, 400, 'text/plain', "Missing day or time");
     }
 
     if (availableTimes[qObj.day] && availableTimes[qObj.day].includes(qObj.time)) {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.write("Time is available");
-        res.end();
+        return sendResponse(res, 200, 'text/plain', 'Time is available');
     } else {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.write("Time is not available");
-        res.end();
+        return sendResponse(res, 200, 'text/plain', 'Time is not available');
     }
 }
 
-//Error function
-function error(response, status, message) {
-    response.writeHead(status, { 'content-type': 'text/plain' });
-    response.write(message);
-    response.end();
-}
+//Create server
+const myserver = http.createServer(function (req, res) {
+    console.log(req.url);
+    const urlObj = url.parse(req.url, true);
+    const pathname = urlObj.pathname;
 
-myserver.listen(80,function(){console.log("listening on port 80")});
+    switch (pathname) {
+        case '/schedule':
+            schedule(urlObj.query, res);
+            break;
+        case '/cancel':
+            cancel(urlObj.query, res);
+            break;
+        case '/check':
+            checkAvailability(urlObj.query, res);
+            break;
+        default:
+            let filePath = '.' + pathname; 
+            if (pathname === '/' || pathname === '') {
+                filePath = './public_html/index.html';
+            } else {
+                filePath = './public_html' + pathname;
+            }
+            sendFile(filePath, res);
+            break;
+    }
+});
+const PORT = 80;
+myserver.listen(PORT, function () {
+    console.log('listening on port', PORT);
+});
