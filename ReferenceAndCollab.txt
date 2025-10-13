@@ -1,0 +1,6 @@
+Matteo Franchi 
+
+I did not collaborate with anyone while working on this assignment. 
+
+I used W3Schools to reinforce coding syntaxes and to remember ideas like array splicing and sorting, buffers, and the normalize method.
+
